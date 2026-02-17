@@ -174,7 +174,8 @@
     
     .control-buttons {
       display: flex;
-      gap: 10px;
+      gap: 8px;
+      align-items: center;
     }
     
     .control-btn {
@@ -211,6 +212,30 @@
     
     .control-btn.minus:active {
       background: #4a1d1d;
+    }
+    
+    .angle-input {
+      width: 60px;
+      height: 40px;
+      border: none;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: white;
+      font-size: 16px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 600;
+      text-align: center;
+      outline: none;
+    }
+    
+    .angle-input:focus {
+      outline: 2px solid #4CAF50;
+    }
+    
+    .angle-input::-webkit-inner-spin-button,
+    .angle-input::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
     }
     
     @media (max-width: 750px) {
@@ -273,6 +298,7 @@
         <span class="control-value" id="servoValue">--°</span>
         <div class="control-buttons">
           <button class="control-btn minus" id="servoMinus">−</button>
+          <input type="number" class="angle-input" id="angleInput" min="0" max="180" placeholder="0-180">
           <button class="control-btn" id="servoPlus">+</button>
         </div>
       </div>
@@ -290,6 +316,8 @@
     let localServoAngle = null;
     let espServoAngle = null;
     let initialized = false;
+    
+    const angleInput = document.getElementById('angleInput');
     
     function formatUptime(seconds) {
       const h = Math.floor(seconds / 3600);
@@ -337,6 +365,15 @@
       } else {
         el.classList.remove('syncing');
       }
+    }
+    
+    function setAngle(angle) {
+      if (angle < 0) angle = 0;
+      if (angle > 180) angle = 180;
+      
+      localServoAngle = angle;
+      updateServoDisplay();
+      syncServo();
     }
     
     function syncServo() {
@@ -409,19 +446,34 @@
     document.getElementById('servoPlus').addEventListener('click', () => {
       if (localServoAngle === null) return;
       if (localServoAngle < 180) {
-        localServoAngle++;
-        updateServoDisplay();
-        syncServo();
+        setAngle(localServoAngle + 1);
       }
     });
     
     document.getElementById('servoMinus').addEventListener('click', () => {
       if (localServoAngle === null) return;
       if (localServoAngle > 0) {
-        localServoAngle--;
-        updateServoDisplay();
-        syncServo();
+        setAngle(localServoAngle - 1);
       }
+    });
+    
+    angleInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const val = parseInt(angleInput.value);
+        if (!isNaN(val)) {
+          setAngle(val);
+        }
+        angleInput.value = '';
+        angleInput.blur();
+      }
+    });
+    
+    angleInput.addEventListener('blur', () => {
+      const val = parseInt(angleInput.value);
+      if (!isNaN(val)) {
+        setAngle(val);
+      }
+      angleInput.value = '';
     });
     
     fetchStatus();
