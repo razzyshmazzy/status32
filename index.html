@@ -266,7 +266,7 @@
     <div class="control-item">
       <div class="control-label">Servo Angle</div>
       <div class="control-row">
-        <span class="control-value" id="servoValue">90°</span>
+        <span class="control-value" id="servoValue">--°</span>
         <div class="control-buttons">
           <button class="control-btn minus" id="servoMinus">−</button>
           <button class="control-btn" id="servoPlus">+</button>
@@ -274,18 +274,15 @@
       </div>
     </div>
     
-    <!-- Add more control items here -->
-    
   </div>
 
   <script>
     const FIREBASE_URL_STATUS = "https://esp32-8d03d-default-rtdb.firebaseio.com/status.json";
-    const FIREBASE_URL_CONTROL = "https://esp32-8d03d-default-rtdb.firebaseio.com/control.json";
+    const FIREBASE_URL_COMMAND = "https://esp32-8d03d-default-rtdb.firebaseio.com/command.json";
     const OFFLINE_THRESHOLD = 5000;
     
     let lastServerTimestamp = 0;
     let lastFetchTime = 0;
-    let servoAngle = 90;
     
     function formatUptime(seconds) {
       const h = Math.floor(seconds / 3600);
@@ -329,13 +326,13 @@
         .then(res => res.json())
         .then(data => {
           if (data) {
-            const now = Date.now();
-            lastFetchTime = now;
+            lastFetchTime = Date.now();
             
             document.getElementById('ssid').textContent = data.ssid || '--';
             document.getElementById('ip').textContent = data.ip || '--';
             document.getElementById('rssi').textContent = data.rssi ? `${data.rssi} dBm` : '--';
             document.getElementById('uptime').textContent = data.uptime ? formatUptime(data.uptime) : '--';
+            document.getElementById('servoValue').textContent = data.servoAngle !== undefined ? data.servoAngle + '°' : '--°';
             
             if (data.rssi) {
               updateSignalBars(data.rssi);
@@ -345,12 +342,6 @@
               lastServerTimestamp = data.timestamp;
               setOnlineStatus(true);
               document.getElementById('lastSeen').textContent = 'Last update: just now';
-            }
-            
-            // Sync servo angle from ESP32
-            if (data.servoAngle !== undefined) {
-              servoAngle = data.servoAngle;
-              document.getElementById('servoValue').textContent = servoAngle + '°';
             }
           }
         })
@@ -375,37 +366,25 @@
       }
     }
     
-    function updateServo(angle) {
-      if (angle < 0) angle = 0;
-      if (angle > 180) angle = 180;
-      
-      servoAngle = angle;
-      document.getElementById('servoValue').textContent = servoAngle + '°';
-      
-      fetch(FIREBASE_URL_CONTROL, {
+    function sendCommand(cmd) {
+      fetch(FIREBASE_URL_COMMAND, {
         method: 'PUT',
-        body: JSON.stringify({ servoAngle: servoAngle })
+        body: JSON.stringify(cmd)
       })
-      .then(() => console.log("Servo updated:", servoAngle))
+      .then(() => console.log("Command sent:", cmd))
       .catch(err => console.log("Error:", err));
     }
     
-    // Event listeners
     document.getElementById('servoPlus').addEventListener('click', () => {
-      updateServo(servoAngle + 1);
+      sendCommand("plus");
     });
     
     document.getElementById('servoMinus').addEventListener('click', () => {
-      updateServo(servoAngle - 1);
+      sendCommand("minus");
     });
     
-    // Initial fetch
     fetchStatus();
-    
-    // Poll every 2 seconds
-    setInterval(fetchStatus, 2000);
-    
-    // Check online status every second
+    setInterval(fetchStatus, 500);
     setInterval(checkOnline, 1000);
   </script>
 </body>
