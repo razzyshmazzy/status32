@@ -168,6 +168,10 @@
       font-weight: 600;
     }
     
+    .control-value.syncing {
+      color: #f4a836;
+    }
+    
     .control-buttons {
       display: flex;
       gap: 10px;
@@ -278,11 +282,14 @@
 
   <script>
     const FIREBASE_URL_STATUS = "https://esp32-8d03d-default-rtdb.firebaseio.com/status.json";
-    const FIREBASE_URL_COMMAND = "https://esp32-8d03d-default-rtdb.firebaseio.com/command.json";
+    const FIREBASE_URL_CONTROL = "https://esp32-8d03d-default-rtdb.firebaseio.com/control.json";
     const OFFLINE_THRESHOLD = 5000;
     
     let lastServerTimestamp = 0;
     let lastFetchTime = 0;
+    let localServoAngle = null;
+    let espServoAngle = null;
+    let initialized = false;
     
     function formatUptime(seconds) {
       const h = Math.floor(seconds / 3600);
@@ -321,6 +328,29 @@
       text.textContent = online ? 'Online' : 'Offline';
     }
     
+    function updateServoDisplay() {
+      const el = document.getElementById('servoValue');
+      el.textContent = localServoAngle + '°';
+      
+      if (localServoAngle !== espServoAngle) {
+        el.classList.add('syncing');
+      } else {
+        el.classList.remove('syncing');
+      }
+    }
+    
+    function syncServo() {
+      if (localServoAngle === null || espServoAngle === null) return;
+      if (localServoAngle === espServoAngle) return;
+      
+      fetch(FIREBASE_URL_CONTROL, {
+        method: 'PUT',
+        body: JSON.stringify({ targetAngle: localServoAngle })
+      })
+      .then(() => console.log("Sync sent:", localServoAngle))
+      .catch(err => console.log("Error:", err));
+    }
+    
     function fetchStatus() {
       fetch(FIREBASE_URL_STATUS)
         .then(res => res.json())
@@ -332,7 +362,6 @@
             document.getElementById('ip').textContent = data.ip || '--';
             document.getElementById('rssi').textContent = data.rssi ? `${data.rssi} dBm` : '--';
             document.getElementById('uptime').textContent = data.uptime ? formatUptime(data.uptime) : '--';
-            document.getElementById('servoValue').textContent = data.servoAngle !== undefined ? data.servoAngle + '°' : '--°';
             
             if (data.rssi) {
               updateSignalBars(data.rssi);
@@ -342,6 +371,17 @@
               lastServerTimestamp = data.timestamp;
               setOnlineStatus(true);
               document.getElementById('lastSeen').textContent = 'Last update: just now';
+            }
+            
+            if (data.servoAngle !== undefined) {
+              espServoAngle = data.servoAngle;
+              
+              if (!initialized) {
+                localServoAngle = espServoAngle;
+                initialized = true;
+              }
+              
+              updateServoDisplay();
             }
           }
         })
@@ -366,21 +406,22 @@
       }
     }
     
-    function sendCommand(cmd) {
-      fetch(FIREBASE_URL_COMMAND, {
-        method: 'PUT',
-        body: JSON.stringify(cmd)
-      })
-      .then(() => console.log("Command sent:", cmd))
-      .catch(err => console.log("Error:", err));
-    }
-    
     document.getElementById('servoPlus').addEventListener('click', () => {
-      sendCommand("plus");
+      if (localServoAngle === null) return;
+      if (localServoAngle < 180) {
+        localServoAngle++;
+        updateServoDisplay();
+        syncServo();
+      }
     });
     
     document.getElementById('servoMinus').addEventListener('click', () => {
-      sendCommand("minus");
+      if (localServoAngle === null) return;
+      if (localServoAngle > 0) {
+        localServoAngle--;
+        updateServoDisplay();
+        syncServo();
+      }
     });
     
     fetchStatus();
