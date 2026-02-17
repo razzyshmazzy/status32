@@ -15,16 +15,26 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      gap: 20px;
       background: #0f0f0f;
       font-family: 'Inter', sans-serif;
+      padding: 20px;
     }
     
     .card {
       background: #1a1a1a;
       border-radius: 16px;
       padding: 40px;
-      width: 350px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+    
+    .status-card {
+      width: 350px;
+    }
+    
+    .control-card {
+      width: 300px;
+      min-height: 400px;
     }
     
     .header {
@@ -51,6 +61,13 @@
       color: white;
       font-size: 28px;
       font-weight: 700;
+    }
+    
+    h2 {
+      margin: 0 0 25px 0;
+      color: white;
+      font-size: 22px;
+      font-weight: 600;
     }
     
     .status-text {
@@ -119,10 +136,93 @@
       text-align: center;
       margin-top: 20px;
     }
+    
+    .control-item {
+      background: #252525;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 15px;
+    }
+    
+    .control-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .control-label {
+      color: #888;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+    
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .control-value {
+      color: white;
+      font-size: 24px;
+      font-weight: 600;
+    }
+    
+    .control-buttons {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .control-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 8px;
+      background: #2d5a2e;
+      color: white;
+      font-size: 20px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .control-btn:hover {
+      background: #3d6a3e;
+    }
+    
+    .control-btn:active {
+      background: #1d4a1e;
+    }
+    
+    .control-btn.minus {
+      background: #5a2d2d;
+    }
+    
+    .control-btn.minus:hover {
+      background: #6a3d3d;
+    }
+    
+    .control-btn.minus:active {
+      background: #4a1d1d;
+    }
+    
+    @media (max-width: 750px) {
+      body {
+        flex-direction: column;
+      }
+      
+      .status-card, .control-card {
+        width: 100%;
+        max-width: 350px;
+      }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
+  <div class="card status-card">
     <div class="header">
       <div class="status-dot" id="statusDot"></div>
       <h1>ESP32</h1>
@@ -159,13 +259,33 @@
     
     <div class="last-seen" id="lastSeen">Waiting for data...</div>
   </div>
+  
+  <div class="card control-card">
+    <h2>Control Panel</h2>
+    
+    <div class="control-item">
+      <div class="control-label">Servo Angle</div>
+      <div class="control-row">
+        <span class="control-value" id="servoValue">90°</span>
+        <div class="control-buttons">
+          <button class="control-btn minus" id="servoMinus">−</button>
+          <button class="control-btn" id="servoPlus">+</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Add more control items here -->
+    
+  </div>
 
   <script>
-    const FIREBASE_URL = "https://esp32-8d03d-default-rtdb.firebaseio.com/status.json";
+    const FIREBASE_URL_STATUS = "https://esp32-8d03d-default-rtdb.firebaseio.com/status.json";
+    const FIREBASE_URL_CONTROL = "https://esp32-8d03d-default-rtdb.firebaseio.com/control.json";
     const OFFLINE_THRESHOLD = 5000;
     
     let lastServerTimestamp = 0;
     let lastFetchTime = 0;
+    let servoAngle = 90;
     
     function formatUptime(seconds) {
       const h = Math.floor(seconds / 3600);
@@ -205,7 +325,7 @@
     }
     
     function fetchStatus() {
-      fetch(FIREBASE_URL)
+      fetch(FIREBASE_URL_STATUS)
         .then(res => res.json())
         .then(data => {
           if (data) {
@@ -221,11 +341,16 @@
               updateSignalBars(data.rssi);
             }
             
-            // Check if online based on timestamp changes
             if (data.timestamp !== lastServerTimestamp) {
               lastServerTimestamp = data.timestamp;
               setOnlineStatus(true);
               document.getElementById('lastSeen').textContent = 'Last update: just now';
+            }
+            
+            // Sync servo angle from ESP32
+            if (data.servoAngle !== undefined) {
+              servoAngle = data.servoAngle;
+              document.getElementById('servoValue').textContent = servoAngle + '°';
             }
           }
         })
@@ -238,8 +363,7 @@
       const timeSinceUpdate = Date.now() - lastFetchTime;
       
       if (lastFetchTime > 0 && timeSinceUpdate > OFFLINE_THRESHOLD) {
-        // Re-fetch to check if timestamp changed
-        fetch(FIREBASE_URL)
+        fetch(FIREBASE_URL_STATUS)
           .then(res => res.json())
           .then(data => {
             if (data && data.timestamp === lastServerTimestamp) {
@@ -250,6 +374,30 @@
           });
       }
     }
+    
+    function updateServo(angle) {
+      if (angle < 0) angle = 0;
+      if (angle > 180) angle = 180;
+      
+      servoAngle = angle;
+      document.getElementById('servoValue').textContent = servoAngle + '°';
+      
+      fetch(FIREBASE_URL_CONTROL, {
+        method: 'PUT',
+        body: JSON.stringify({ servoAngle: servoAngle })
+      })
+      .then(() => console.log("Servo updated:", servoAngle))
+      .catch(err => console.log("Error:", err));
+    }
+    
+    // Event listeners
+    document.getElementById('servoPlus').addEventListener('click', () => {
+      updateServo(servoAngle + 1);
+    });
+    
+    document.getElementById('servoMinus').addEventListener('click', () => {
+      updateServo(servoAngle - 1);
+    });
     
     // Initial fetch
     fetchStatus();
