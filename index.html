@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>ESP32 Status</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #0f0f0f;
+      font-family: 'Inter', sans-serif;
+    }
+    
+    .card {
+      background: #1a1a1a;
+      border-radius: 16px;
+      padding: 40px;
+      width: 350px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+    
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    
+    .status-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #f44336;
+    }
+    
+    .status-dot.online {
+      background: #4CAF50;
+      box-shadow: 0 0 10px #4CAF50;
+    }
+    
+    h1 {
+      margin: 0;
+      color: white;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    
+    .status-text {
+      color: #888;
+      font-size: 14px;
+      margin-left: auto;
+    }
+    
+    .status-text.online {
+      color: #4CAF50;
+    }
+    
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 15px 0;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    
+    .info-row:last-child {
+      border-bottom: none;
+    }
+    
+    .label {
+      color: #666;
+      font-size: 14px;
+    }
+    
+    .value {
+      color: white;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    
+    .signal {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .signal-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 16px;
+    }
+    
+    .signal-bar {
+      width: 4px;
+      background: #333;
+      border-radius: 1px;
+    }
+    
+    .signal-bar.active {
+      background: #4CAF50;
+    }
+    
+    .signal-bar:nth-child(1) { height: 4px; }
+    .signal-bar:nth-child(2) { height: 8px; }
+    .signal-bar:nth-child(3) { height: 12px; }
+    .signal-bar:nth-child(4) { height: 16px; }
+    
+    .last-seen {
+      color: #666;
+      font-size: 12px;
+      text-align: center;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="status-dot" id="statusDot"></div>
+      <h1>ESP32</h1>
+      <span class="status-text" id="statusText">Offline</span>
+    </div>
+    
+    <div class="info-row">
+      <span class="label">Network</span>
+      <span class="value" id="ssid">--</span>
+    </div>
+    
+    <div class="info-row">
+      <span class="label">IP Address</span>
+      <span class="value" id="ip">--</span>
+    </div>
+    
+    <div class="info-row">
+      <span class="label">Signal</span>
+      <div class="signal">
+        <div class="signal-bars" id="signalBars">
+          <div class="signal-bar"></div>
+          <div class="signal-bar"></div>
+          <div class="signal-bar"></div>
+          <div class="signal-bar"></div>
+        </div>
+        <span class="value" id="rssi">--</span>
+      </div>
+    </div>
+    
+    <div class="info-row">
+      <span class="label">Uptime</span>
+      <span class="value" id="uptime">--</span>
+    </div>
+    
+    <div class="last-seen" id="lastSeen">Waiting for data...</div>
+  </div>
+
+  <script>
+    const FIREBASE_URL = "https://esp32-8d03d-default-rtdb.firebaseio.com/status.json";
+    const OFFLINE_THRESHOLD = 5000;
+    
+    let lastServerTimestamp = 0;
+    let lastFetchTime = 0;
+    
+    function formatUptime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      
+      if (h > 0) {
+        return `${h}h ${m}m ${s}s`;
+      } else if (m > 0) {
+        return `${m}m ${s}s`;
+      } else {
+        return `${s}s`;
+      }
+    }
+    
+    function updateSignalBars(rssi) {
+      const bars = document.querySelectorAll('.signal-bar');
+      let activeBars = 0;
+      
+      if (rssi >= -50) activeBars = 4;
+      else if (rssi >= -60) activeBars = 3;
+      else if (rssi >= -70) activeBars = 2;
+      else activeBars = 1;
+      
+      bars.forEach((bar, i) => {
+        bar.classList.toggle('active', i < activeBars);
+      });
+    }
+    
+    function setOnlineStatus(online) {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      
+      dot.classList.toggle('online', online);
+      text.classList.toggle('online', online);
+      text.textContent = online ? 'Online' : 'Offline';
+    }
+    
+    function fetchStatus() {
+      fetch(FIREBASE_URL)
+        .then(res => res.json())
+        .then(data => {
+          if (data) {
+            const now = Date.now();
+            lastFetchTime = now;
+            
+            document.getElementById('ssid').textContent = data.ssid || '--';
+            document.getElementById('ip').textContent = data.ip || '--';
+            document.getElementById('rssi').textContent = data.rssi ? `${data.rssi} dBm` : '--';
+            document.getElementById('uptime').textContent = data.uptime ? formatUptime(data.uptime) : '--';
+            
+            if (data.rssi) {
+              updateSignalBars(data.rssi);
+            }
+            
+            // Check if online based on timestamp changes
+            if (data.timestamp !== lastServerTimestamp) {
+              lastServerTimestamp = data.timestamp;
+              setOnlineStatus(true);
+              document.getElementById('lastSeen').textContent = 'Last update: just now';
+            }
+          }
+        })
+        .catch(err => {
+          console.log("Fetch error:", err);
+        });
+    }
+    
+    function checkOnline() {
+      const timeSinceUpdate = Date.now() - lastFetchTime;
+      
+      if (lastFetchTime > 0 && timeSinceUpdate > OFFLINE_THRESHOLD) {
+        // Re-fetch to check if timestamp changed
+        fetch(FIREBASE_URL)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.timestamp === lastServerTimestamp) {
+              setOnlineStatus(false);
+              const seconds = Math.floor(timeSinceUpdate / 1000);
+              document.getElementById('lastSeen').textContent = `Last update: ${seconds}s ago`;
+            }
+          });
+      }
+    }
+    
+    // Initial fetch
+    fetchStatus();
+    
+    // Poll every 2 seconds
+    setInterval(fetchStatus, 2000);
+    
+    // Check online status every second
+    setInterval(checkOnline, 1000);
+  </script>
+</body>
+</html>
